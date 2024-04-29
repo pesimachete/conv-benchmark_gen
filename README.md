@@ -1,16 +1,14 @@
 # vnncomp-benchmark-generation
 
-
-- Install required packages 
-```bash
-conda deactivate
-conda env remove --name benchmark
-conda env create -f env.yaml
-```
-
-
-- Activate `conda` environment
+- Setup environment (variables, packages, verifiers, etc.)
 
 ```bash
-conda activate benchmark
+source ./setup.sh
 ```
+
+- Generate benchmarks
+
+```bash
+~/conda-test/envs/benchmark-neuralsat/bin/python generate_properties.py <seed>
+```
+

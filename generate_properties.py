@@ -8,6 +8,7 @@ import tqdm
 import onnx
 import os
 
+
 BENCHMARK_DIR_PATH = os.path.join(os.path.dirname(__file__), 'instances')
 NETWORK_DIR_PATH = os.path.join(os.path.dirname(__file__), 'networks')
 DATASET_DIR_PATH = os.path.join(os.path.dirname(__file__), 'datasets')
@@ -16,21 +17,28 @@ TEMP_DIR_PATH = os.path.join(os.path.dirname(__file__), 'temp')
 MAX_COUNT = 3 # number of instances per network
 TIMEOUT = (6 * 3600) / (12 * MAX_COUNT)
 
-mnist_dataset = torchvision.datasets.MNIST(
+NEURALSAT_PYTHON = os.getenv('NEURALSAT_PY', '')
+CROWN_PYTHON = os.getenv('CROWN_PY', '')
+if (not NEURALSAT_PYTHON) or (not CROWN_PYTHON):
+    print('[!] Please run "source ./setup.sh" before running this script.')
+    exit(1)
+
+
+MNIST_DATASET = torchvision.datasets.MNIST(
     root=f'{DATASET_DIR_PATH}/mnist',
     transform=torchvision.transforms.ToTensor(),
     train=False,
     download=True,
 )
 
-cifar10_dataset = torchvision.datasets.CIFAR10(
+CIFAR10_DATASET = torchvision.datasets.CIFAR10(
     root=f'{DATASET_DIR_PATH}/cifar10',
     transform=torchvision.transforms.ToTensor(),
     train=False,
     download=True,
 )
 
-cifar100_dataset = torchvision.datasets.CIFAR100(
+CIFAR100_DATASET = torchvision.datasets.CIFAR100(
     root=f'{DATASET_DIR_PATH}/cifar100',
     transform=torchvision.transforms.ToTensor(),
     train=False,
@@ -97,11 +105,11 @@ def _write_vnnlib(prefix:str, center: torch.Tensor, radius: float, prediction: t
 
 def _get_dataloader(dataset: str):
     if dataset == 'mnist':
-        dataloader = DataLoader(mnist_dataset, batch_size=1, shuffle=True)
+        dataloader = DataLoader(MNIST_DATASET, batch_size=1, shuffle=True)
     elif dataset == 'cifar10':
-        dataloader = DataLoader(cifar10_dataset, batch_size=1, shuffle=True)
+        dataloader = DataLoader(CIFAR10_DATASET, batch_size=1, shuffle=True)
     elif dataset == 'cifar100':
-        dataloader = DataLoader(cifar100_dataset, batch_size=1, shuffle=True)
+        dataloader = DataLoader(CIFAR100_DATASET, batch_size=1, shuffle=True)
     else:
         raise NotImplementedError()
     return dataloader
@@ -148,13 +156,13 @@ def _generate_instance_per_network(net_path, session, dataloader, fp, seed: int 
             )
             
             # filter easy instance
-            timeout = 30
+            timeout = 30 # per instance
             if _filter_instance(net_path, spec_path, timeout):
                 continue
             
             # save
-            # print(net_path)
-            # print(spec_path) 
+            print(net_path)
+            print(spec_path) 
             _write_instance(net_path, spec_path, fp)
             
             # stat
@@ -172,6 +180,8 @@ def _write_instance(net_path, spec_path, fp):
     
 
 def _filter_instance(net_path, spec_path, timeout):
+    if _filter_instance_crown(net_path, spec_path, timeout):
+        return True
     if _filter_instance_neuralsat(net_path, spec_path, timeout):
         return True
     return False
@@ -183,7 +193,22 @@ def _filter_instance_neuralsat(net_path, spec_path, timeout):
     if output is None: # error:
         return True
     
-    if 'sat' in output.lower(): # easy
+    if 'sat' in output.lower(): # easy sat/unsat
+        return True 
+    
+    if 'timeout' in output.lower(): # not easy
+        return False
+    
+    return True # unknown
+
+
+def _filter_instance_crown(net_path, spec_path, timeout):
+    "Filter out easy instances"
+    output = _run_crown(net_path, spec_path, timeout)
+    if output is None: # error:
+        return True
+    
+    if 'sat' in output.lower(): # easy sat/unsat
         return True 
     
     if 'timeout' in output.lower(): # not easy
@@ -196,7 +221,8 @@ def _run_neuralsat(net_path, spec_path, timeout):
     res_file = f'{TEMP_DIR_PATH}/neuralsat_res.txt'
     os.system(f'rm -rf {res_file}')
     
-    cmd = f'python3 {VERIFIER_DIR_PATH}/neuralsat/neuralsat-pt201/main.py --net {net_path} --spec {spec_path} --timeout {timeout} --device cpu --result_file {res_file} > /dev/null 2>&1'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    cmd = f'{NEURALSAT_PYTHON} {VERIFIER_DIR_PATH}/neuralsat/neuralsat-pt201/main.py --net {net_path} --spec {spec_path} --timeout {timeout} --device {device} --result_file {res_file} > /dev/null 2>&1'
     # print(cmd)
     os.system(cmd)
     
@@ -208,22 +234,22 @@ def _run_neuralsat(net_path, spec_path, timeout):
     return output
 
 
-
-def _run_abcrown(net_path, spec_path, timeout):
-    # res_file = f'{TEMP_DIR_PATH}/abcrown_res.txt'
-    # os.system(f'rm -rf {res_file}')
+def _run_crown(net_path, spec_path, timeout):
+    res_file = f'{TEMP_DIR_PATH}/abcrown_res.txt'
+    os.system(f'rm -rf {res_file}')
     
-    # cmd = f'python3 {VERIFIER_DIR_PATH}/neuralsat/neuralsat-pt201/main.py --net {net_path} --spec {spec_path} --timeout {timeout} --result_file {res_file}'# > /dev/null 2>&1'
-    # # print(cmd)
-    # os.system(cmd)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    config = f'{VERIFIER_DIR_PATH}/alpha-beta-CROWN/complete_verifier/exp_configs/vnncomp22/cifar2020_2_255.yaml' # default config
+    cmd = f'{CROWN_PYTHON} {VERIFIER_DIR_PATH}/alpha-beta-CROWN/complete_verifier/abcrown.py --config {config} --onnx_path {net_path} --vnnlib_path {spec_path} --timeout {timeout} --device {device} --results_file {res_file}> /dev/null 2>&1'
+    # print(cmd)
+    os.system(cmd)
     
-    # if not os.path.exists(res_file):
-    #     return None
+    if not os.path.exists(res_file):
+        return None
     
-    # output = open(res_file).read().strip()
-    # os.system(f'rm -rf {res_file}')
-    # return output
-    ...
+    output = open(res_file).read().strip()
+    os.system(f'rm -rf {res_file}')
+    return output
     
 
 def generate(args):
@@ -235,7 +261,7 @@ def generate(args):
     with open(f'{BENCHMARK_DIR_PATH}/instances.csv', 'w') as fp:
         for dataset in os.listdir(NETWORK_DIR_PATH):
             _generate_instance_per_dataset(dataset, fp, seed=args.seed)
-        
+
 
 def main():
     parser = argparse.ArgumentParser(description='Benchmark generator',)
@@ -244,5 +270,7 @@ def main():
         
     generate(args)
     
+    
 if __name__ == "__main__":
     main()
+    
