@@ -16,12 +16,23 @@ VERIFIER_DIR_PATH = os.path.join(os.path.dirname(__file__), 'tools')
 TEMP_DIR_PATH = os.path.join(os.path.dirname(__file__), 'temp')
 MAX_COUNT = 3 # number of instances per network
 TIMEOUT = (6 * 3600) / (12 * MAX_COUNT)
+EASY_INSTANCE_TIMEOUT = 20
 
 NEURALSAT_PYTHON = os.getenv('NEURALSAT_PY', '')
 CROWN_PYTHON = os.getenv('CROWN_PY', '')
 if (not NEURALSAT_PYTHON) or (not CROWN_PYTHON):
     print('[!] Please run "source ./setup.sh" before running this script.')
     exit(1)
+
+
+class ReturnStatus:
+
+    UNSAT   = 'unsat'
+    SAT     = 'sat'
+    UNKNOWN = 'unknown'
+    TIMEOUT = 'timeout'
+    RESTART = 'restart'
+    ERROR   = 'error'
 
 
 MNIST_DATASET = torchvision.datasets.MNIST(
@@ -142,7 +153,7 @@ def _generate_instance_per_network(net_path, session, dataloader, fp, seed: int 
             continue 
         
         # find epsilon
-        for eps in np.linspace(0.005, 0.05, 51):
+        for eps in np.linspace(0.01, 0.05, 21):
             # gen spec
             spec_path = _write_vnnlib(
                 prefix=f'spec_{os.path.basename(net_path)[:-5]}_idx_{i}',
@@ -156,8 +167,11 @@ def _generate_instance_per_network(net_path, session, dataloader, fp, seed: int 
             )
             
             # filter easy instance
-            timeout = 30 # per instance
-            if _filter_instance(net_path, spec_path, timeout):
+            inst_stat, inst_filter = _filter_instance(net_path, spec_path, EASY_INSTANCE_TIMEOUT)
+            if inst_filter:
+                if inst_stat == ReturnStatus.SAT:
+                    print(f'Skip from eps={eps} due to a cex is found')
+                    break
                 continue
             
             # save
@@ -180,41 +194,42 @@ def _write_instance(net_path, spec_path, fp):
     
 
 def _filter_instance(net_path, spec_path, timeout):
-    if _filter_instance_crown(net_path, spec_path, timeout):
-        return True
-    if _filter_instance_neuralsat(net_path, spec_path, timeout):
-        return True
-    return False
+    inst_stat, inst_filter = _filter_instance_crown(net_path, spec_path, timeout)
+    if inst_filter:
+        return inst_stat, inst_filter
+    
+    inst_stat, inst_filter = _filter_instance_neuralsat(net_path, spec_path, timeout)
+    if inst_filter:
+        return inst_stat, inst_filter
+    
+    return inst_stat, False
 
+def _handle_verifier_output(output):
+    if output is None: # error
+        return ReturnStatus.ERROR, True
+    
+    if 'unsat' in output.lower(): # easy unsat
+        return ReturnStatus.UNSAT, True 
+    
+    if 'sat' in output.lower(): # easy sat
+        return ReturnStatus.SAT, True 
+    
+    if 'timeout' in output.lower(): # not easy
+        return ReturnStatus.TIMEOUT, False
+    
+    return ReturnStatus.UNKNOWN, True # unknown
 
 def _filter_instance_neuralsat(net_path, spec_path, timeout):
     "Filter out easy instances"
     output = _run_neuralsat(net_path, spec_path, timeout)
-    if output is None: # error:
-        return True
-    
-    if 'sat' in output.lower(): # easy sat/unsat
-        return True 
-    
-    if 'timeout' in output.lower(): # not easy
-        return False
-    
-    return True # unknown
+    return _handle_verifier_output(output)
 
 
 def _filter_instance_crown(net_path, spec_path, timeout):
     "Filter out easy instances"
     output = _run_crown(net_path, spec_path, timeout)
-    if output is None: # error:
-        return True
-    
-    if 'sat' in output.lower(): # easy sat/unsat
-        return True 
-    
-    if 'timeout' in output.lower(): # not easy
-        return False
-    
-    return True # unknown
+    return _handle_verifier_output(output)
+
 
 
 def _run_neuralsat(net_path, spec_path, timeout):
