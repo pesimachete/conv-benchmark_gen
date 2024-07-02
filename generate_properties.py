@@ -35,12 +35,6 @@ class ReturnStatus:
     ERROR   = 'error'
 
 
-MNIST_DATASET = torchvision.datasets.MNIST(
-    root=f'{DATASET_DIR_PATH}/mnist',
-    transform=torchvision.transforms.ToTensor(),
-    train=False,
-    download=True,
-)
 
 CIFAR10_DATASET = torchvision.datasets.CIFAR10(
     root=f'{DATASET_DIR_PATH}/cifar10',
@@ -48,14 +42,6 @@ CIFAR10_DATASET = torchvision.datasets.CIFAR10(
     train=False,
     download=True,
 )
-
-CIFAR100_DATASET = torchvision.datasets.CIFAR100(
-    root=f'{DATASET_DIR_PATH}/cifar100',
-    transform=torchvision.transforms.ToTensor(),
-    train=False,
-    download=True,
-)
-
 
 def recursive_walk(rootdir):
     for r, dirs, files in os.walk(rootdir):
@@ -115,12 +101,9 @@ def _write_vnnlib(prefix:str, center: torch.Tensor, radius: float, prediction: t
 
 
 def _get_dataloader(dataset: str):
-    if dataset == 'mnist':
-        dataloader = DataLoader(MNIST_DATASET, batch_size=1, shuffle=True)
-    elif dataset == 'cifar10':
+
+    if dataset == 'cifar10':
         dataloader = DataLoader(CIFAR10_DATASET, batch_size=1, shuffle=True)
-    elif dataset == 'cifar100':
-        dataloader = DataLoader(CIFAR100_DATASET, batch_size=1, shuffle=True)
     else:
         raise NotImplementedError()
     return dataloader

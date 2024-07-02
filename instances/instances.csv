@@ -1,0 +1,3 @@
+onnx/CIFAR10_small.onnx,vnnlib/spec_CIFAR10_small_idx_4_eps_0.04000.vnnlib,600.0
+onnx/CIFAR10_small.onnx,vnnlib/spec_CIFAR10_small_idx_4_eps_0.04200.vnnlib,600.0
+onnx/CIFAR10_small.onnx,vnnlib/spec_CIFAR10_small_idx_4_eps_0.04400.vnnlib,600.0
